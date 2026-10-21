@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mode Player</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Modes">
+<meta name="theme-color" content="#0c0c10">
+<meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" href="icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one-screen player. Mode switcher on top, 9:16 clip in the middle, controls + re-sort under it. Dark by design. */
+:root{
+  --ink:#0c0c10; --panel:#16161d; --line:#2a2a35; --fg:#ecebf2; --dim:#8d8ca0;
+  --mindset:#7fa7ff; --money:#e8c15a; --looks:#ff7f9f; --unsorted:#a7a6b8;
+  --accent:var(--mindset);
+  --display:"Unbounded", "Arial Black", system-ui, sans-serif;
+  --body:"Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, Consolas, monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--ink);color:var(--fg);font:15px/1.45 var(--body);
+  padding-left:max(16px, env(safe-area-inset-left,0px));padding-right:max(16px, env(safe-area-inset-right,0px));}
+body[data-mode="q"]{--accent:var(--mindset)} body[data-mode="m"]{--accent:var(--money)}
+body[data-mode="l"]{--accent:var(--looks)} body[data-mode="u"]{--accent:var(--unsorted)}
+.app{max-width:1000px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;gap:14px;padding-block:14px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{font:800 18px/1 var(--display);letter-spacing:.02em;margin:0}
+h1 span{color:var(--accent);transition:color .3s}
+.modes{display:flex;gap:6px;flex-wrap:wrap}
+.mode{font:600 13px var(--body);color:var(--dim);background:var(--panel);border:1px solid var(--line);
+  border-radius:999px;padding:7px 13px;cursor:pointer;display:flex;gap:7px;align-items:center}
+.mode b{font:500 11px var(--mono);color:var(--dim)}
+.mode[aria-pressed="true"]{color:var(--ink);background:var(--c);border-color:var(--c)}
+.mode[aria-pressed="true"] b{color:var(--ink)}
+.mode:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+main{flex:1;display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:22px;align-items:start}
+.stage{position:relative;height:min(78vh,820px);aspect-ratio:9/16;max-width:100%;background:#000;border-radius:14px;overflow:hidden;border:1px solid var(--line)}
+.stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.start{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+  background:radial-gradient(circle at 50% 40%, color-mix(in srgb,var(--accent) 22%, #000), #000 70%);text-align:center;padding:24px}
+.start button{font:800 15px var(--display);background:var(--accent);color:var(--ink);border:0;border-radius:999px;padding:14px 26px;cursor:pointer}
+.start p{margin:0;color:var(--dim);max-width:26ch}
+.side{display:flex;flex-direction:column;gap:16px;min-width:0}
+.now .label{font:500 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.now .cap{font:600 20px/1.3 var(--body);margin:6px 0 4px;text-wrap:balance;word-break:break-word}
+.now .song{color:var(--dim);font-size:14px;min-height:1.4em}
+.bar{height:3px;background:var(--line);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s linear}
+.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ctl{background:var(--panel);border:1px solid var(--line);color:var(--fg);border-radius:12px;height:46px;min-width:46px;padding:0 14px;
+  font:600 14px var(--body);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
+.ctl.big{background:var(--accent);color:var(--ink);border-color:var(--accent);min-width:64px;font-size:18px}
+.toggles{display:flex;gap:8px;flex-wrap:wrap}
+.tog{font:500 13px var(--body);color:var(--dim);background:transparent;border:1px solid var(--line);border-radius:999px;padding:6px 12px;cursor:pointer}
+.tog[aria-pressed="true"]{color:var(--fg);border-color:var(--accent)}
+.sort{border-top:1px solid var(--line);padding-top:14px;display:flex;flex-direction:column;gap:8px}
+.sort h2{margin:0;font:500 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.sort .row{display:flex;gap:6px;flex-wrap:wrap}
+.sort button{font:600 13px var(--body);background:transparent;color:var(--c);border:1px solid color-mix(in srgb,var(--c) 45%, transparent);
+  border-radius:10px;padding:7px 11px;cursor:pointer}
+.sort button kbd{font:500 11px var(--mono);opacity:.7;margin-right:4px}
+.small{color:var(--dim);font-size:13px}
+.add{display:flex;gap:8px}
+.add input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);color:var(--fg);border-radius:12px;padding:0 12px;height:42px;font:16px var(--body)}
+.add input:focus{outline:2px solid var(--accent);outline-offset:1px}
+.small a{color:var(--fg)}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--ink);
+  font:600 13px var(--body);padding:9px 14px;border-radius:999px;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.show{opacity:1}
+@media (max-width:760px){
+  main{grid-template-columns:1fr}
+  .stage{height:auto;width:100%;max-height:72vh;margin:0 auto}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body data-mode="q">
+<div class="app">
+  <header>
+    <h1>Mode <span>Player</span></h1>
+    <nav class="modes" id="modes" aria-label="Modes"></nav>
+  </header>
+  <main>
+    <div class="stage" id="stage">
+      <div class="start" id="start">
+        <button id="go">Start</button>
+        <p>Plays your saved TikToks back to back, straight from TikTok. Glance, listen, it moves on by itself.</p>
+      </div>
+    </div>
+    <section class="side">
+      <div class="now">
+        <div class="label" id="pos">Mindset</div>
+        <div class="cap" id="cap">Press Start</div>
+        <div class="song" id="song"></div>
+      </div>
+      <div class="bar"><i id="prog"></i></div>
+      <div class="controls">
+        <button class="ctl" id="prev" aria-label="Previous">◀◀</button>
+        <button class="ctl big" id="pp" aria-label="Play or pause">❚❚</button>
+        <button class="ctl" id="next" aria-label="Next">▶▶</button>
+      </div>
+      <div class="toggles">
+        <button class="tog" id="shuf" aria-pressed="true">Shuffle</button>
+        <button class="tog" id="cap30" aria-pressed="true">Cut long clips at 40 s</button>
+        <button class="tog" id="vis" aria-pressed="true">Show video</button>
+      </div>
+      <div class="sort">
+        <h2>Wrong mode? Move this clip</h2>
+        <div class="row" id="sortRow"></div>
+        <div class="small">Keys: <b>space</b> play/pause, <b>←/→</b> previous/next, <b>1–4</b> move clip. <a id="open" href="#" target="_blank" rel="noopener">Open on TikTok</a></div>
+        <div class="row"><button style="--c:var(--fg)" id="copy">Copy my sorting</button></div>
+        <div class="small">Your moves and added clips are saved on this device. Copy and paste them to Claude to make them permanent.</div>
+      </div>
+      <div class="sort">
+        <h2>Add a TikTok</h2>
+        <form class="add" id="addForm">
+          <input id="addUrl" type="text" inputmode="url" autocomplete="off" placeholder="Paste a TikTok link" aria-label="TikTok link">
+          <button type="submit" class="ctl big" style="height:42px;font-size:15px">+</button>
+        </form>
+        <div class="small" id="addHelp">It goes into the mode you're on now. Short links (tiktok.com/t/…) don't contain the video number: open the link in Safari first, then copy the address from the top and paste that.</div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const RAW=[["7684280656146287894","q",0,"Now we see who really wants it. No more talk. Just proof.",""],["7698517605744676103","u",0,"",""],["7698369437891579169","q",0,"",""],["7692309759915003149","m",0,"this song gives me nostalgia 🥹",""],["7423769122120486175","q",0,"Law of attraction.",""],["7693737952043601173","l",0,"jaja humor clark",""],["7693146300270890292","m",0,"",""],["7692893662082026760","l",0,"Clarkkent Smallville",""],["7694435063211003149","m",0,"Nobody’s buisness💫🌹",""],["7694403346488249631","u",1,"Limitless & Six Eyes",""],["7693942099221269782","q",0,"Should be a rule. 🙏🖤",""],["7693364258704297246","u",0,"",""],["7692604504646143246","u",1,"",""],["7690756137200766229","u",0,"Acércate que quiero decirte algo baby 🗣️",""],["7671231136214961416","u",0,"i got a feeling",""],["7686943123716558098","u",0,"🖤",""],["7684043295210736909","m",0,"Movin 🚣",""],["7673658782475390229","m",0,"Sorry Xav ❤️",""],["7672945304513170719","u",0,"",""],["7686967981158550814","l",0,"Holy audio",""],["7687489384119078158","u",0,"",""],["7654129278216391943","l",0,"Hell yeah",""],["7687254858277195016","u",0,"this song >>>",""],["7680978593261817101","m",0,"",""],["7685363612080246048","m",1,"no plans, no alarms, nowhere else to be.",""],["7685854293798292749","u",0,"style","Style · Taylor Swift"],["7675407982313639201","u",0,"",""],["7686254610096393486","u",0,"this is a gem 💎",""],["7686691328784190728","q",1,"",""],["7664318040670080289","u",1,"","CHIHIRO - Instrumental Slowed + Reverb · teske"],["7683154172698496270","m",0,"",""],["7682373700313812257","m",0,"Too Dark… or Cinematic? 👀",""],["7678298639332117768","m",0,"Light me up",""],["7681226404737977631","m",1,"",""],["7680207572200115488","u",0,"","Do You Mind · Gordo & Kyla"],["7660914432129633557","u",1,"Ahora sí, ya se viene el prime",""],["7675001610749349140","u",0,"only you. >>>",""],["7435051259964427527","u",0,"",""],["7558206421926432022","l",0,"I love this song 🔥",""],["7673751717430725895","l",0,"fr",""],["7671454013384150292","u",0,"",""],["7673932985514724628","u",0,"",""],["7673451309063769366","u",1,"",""],["7673138395211681031","u",0,"only you >>>",""],["7673019961303944479","m",0,"",""],["7672444741967006996","u",0,"fashion center",""],["7672506268979907860","u",0,"",""],["7670855023835827464","u",0,"love me like you do.",""],["7670008818142596373","u",0,"",""],["7670165521312009493","u",0,"lo-love me harder",""],["7667192881274309910","l",0,"",""],["7665829709439175950","l",0,"Official PSL scores",""],["7657021837037079828","l",0,"",""],["7380745740257168673","u",0,"Odetari - Hypnotic Data",""],["7669904476886584597","l",0,"Official ratings",""],["7419530029819874566","l",0,"",""],["7661845097100610836","l",0,"",""],["7669629450270543125","l",0,"Get your PSL ratings and Ascend",""],["7665872898002783506","l",0,"",""],["7668192671357275400","l",0,"fr",""],["7669230487235251470","l",0,"You just had to be lucky in the beginning",""],["7668943095806938375","u",0,"vacation bible school x better off alone",""],["7650942055912459528","l",0,"Official ratings",""],["7653480371127962910","l",0,"Official ratings",""],["7656461774689963284","l",0,"mogg nightwing edit · song: bimbo doll",""],["7651292737374915862","u",0,"The 2010 couple aside Justin Bieber and Selena Gomez",""],["7664462511927872798","m",0,"Porsche 992 GT3RS x sunset",""],["7662843486831398162","l",0,"Tom Welling 💥🦸🏻",""],["7664814959376764191","u",0,"Aviva best girl",""],["7653787023215447318","l",1,"",""],["7660355400876707102","l",0,"The teacher always mogs the student",""],["7658332591384202498","l",0,"Official ratings",""],["7646758968634723614","u",0,"Jowell y Randy - Bonita",""],["7657272735105600782","l",0,"Official ratings",""],["7658732936304413966","u",0,"I love myself👯",""],["7657415412585483534","l",0,"Official ratings",""],["7660329704347487496","u",0,"burn.",""],["7660406503697829141","u",0,"vacation bible school x brooklyn bloodpop",""],["7659625836491951380","u",0,"",""],["7656514823244549384","u",0,"start now","They Call Me Sonic (slowed) · Console Allstars"],["7659092205512019233","m",0,"Monaco cars",""],["7658013570067762454","q",0,"Check my profile","Alone · Marshmello"],["7644298442180676896","m",0,"",""],["7643821953555598612","u",0,"","Vente Pa' Ca (feat. Maluma) · Ricky Martin"],["7633933368782097682","l",0,"Goated collab with my boy",""],["7651965477496851726","l",1,"strawberry resurfacing cream for smooth skin",""],["7650235900370160904","l",0,"Real 🔥",""],["7651367443994004750","l",0,"she's so beautiful 😍",""],["7651328391362137364","u",0,"this songs 🖤🎧",""],["7651409148243954965","m",0,"Supercars in Monaco ✨️",""],["7645525364692864277","l",0,"Your the one",""],["7631145244418903303","m",0,"Awesome wave from the other night😍",""],["7648700363037527318","l",0,"Hard but not impossible",""],["7649036886320663840","m",0,"Gt2rs 🤍",""],["7649517442535886110","l",0,"escapate conmigo",""],["7650006423748824342","l",0,"I usually mog them so it’s ok!",""],["7630804480073780513","q",0,"[Part 37] Get the best version of yourself.",""],["7649122410121186580","l",0,"Official ratings",""],["7647537875323489556","l",0,"What’s Lionel doing bro 🙏😭",""],["7645308364913773831","l",0,"",""],["7647208806543346977","l",0,"Official ratings",""],["7647534942460710162","l",0,"",""],["7646136913576856853","l",0,"",""],["7638211356302298390","l",0,"Real",""],["7626096961522781462","l",0,"",""],["7645973100261149974","u",0,"this song>>>",""],["7646434315374497038","u",0,"Play date",""],["7645001490918133023","m",0,"Got clipped badddd",""],["7644937096909655310","q",0,"The hardest part of growing up is realizing nobody is coming to save you",""],["7643594827535273238","l",0,"The side quests are elite",""],["7643607480416636180","m",0,"Oh dream!🫵😍",""],["7631599477719141654","m",1,"5 apps to accelerate 7 figure businesses","Struggle - Slowed · onimanxd"],["7641673554538368274","u",0,"sweet but psycho >>",""],["7628591768153394454","q",0,"Grateful to be on this path!",""],["7598717162978675990","l",0,"Official PSL scores",""],["7621975156738755862","l",0,"Official PSL scores",""],["7636620171532094734","m",0,"",""],["7634837373913779488","l",0,"PSL ratings + Ascend · low cortisol",""],["7635041271295347988","u",0,"Gyal You A Party Animal (Slowed + Reverb)",""],["7635356512788974881","q",0,"It’s you vs you",""],["7292092968968670497","u",0,"The Black Eyed Peas - I Gotta Feeling, slowed",""],["7620885609841822998","l",0,"Part 20 · just become the star✨",""],["7632850497640140062","m",0,"",""],["7626097778372005141","m",0,"Property didn’t stand a chance",""],["7631297398735719698","m",0,"Perfection",""],["7633001064228244768","m",0,"dream rotation.",""],["7631002721998359821","l",0,"holy audio",""],["7629769769754955038","l",0,"Ratings + Ascend",""],["7624626117764205854","l",0,"Ascend",""],["7628839739294059789","m",0,"Say you’ll never let me go",""],["7625679442190306582","l",0,"",""],["7624905950167600415","m",0,"Insane Collection",""],["7392304413991341343","l",0,"Serving on screen and on the runway!",""],["7619098878423371029","l",0,"",""],["7611959344405417230","m",0,"Your first $1000 on social media",""],["7597341783781133586","u",0,"Blame - Slowed",""],["7604987862265728286","l",0,"LIMITLESS",""],["7607055316072647958","q",1,"Journal",""],["7614874088015777046","q",1,"",""],["7606817226682879262","q",0,"You don’t have time.",""],["7588166108440431902","q",0,"hard work.",""],["7543265725981543698","q",0,"",""],["7560903893383712013","q",0,"Proverbs 24:16",""],["7556765177698323734","q",0,"YOU NEED TO WORK MORE NOW THAN EVER",""],["7547985247162371342","q",0,"Start self analyzing to recognize where you’re going wrong in life.","numb (Slowed + Reverb) · my head is empty"],["7560088181698333984","q",0,"You gonna get that dream",""],["7551316436250135840","q",0,"Stay focused….",""],["7562194695804194056","q",0,"Real...",""],["7552020627532664076","q",0,"Winter Arc",""],["7543610751596989718","q",0,"",""],["7561491367592004919","q",0,"It’s easier than u think💯","a way out · my head is empty & Miranda Rain"],["7561480077314133262","q",0,"Get To Work.",""],["7551752260993256718","q",0,"BE A MAN.",""],["7541527533364333846","q",0,"“I got god on my side” · Floyd Mayweather",""],["7539127661323422997","u",0,"",""],["7536990114350681366","q",0,"The dream isn’t the trophy. It’s the grind.🐍🏆","in the bleak midwinter · .diedlonely"],["7540403161786354977","q",0,"Promise me.",""],["7545909790115925270","u",0,"The Beauty of UFC","Pearls · Sade"],["7554880036550036791","q",0,"even when it’s slow, even when it’s lonely",""],["7536477969976429846","q",0,"DONT.",""],["7528614841242701087","q",0,"being your gym audio plug",""],["7523825281744784671","q",0,"How Far are You Willing to Go?","Paranoid - Just Raw · Aloboi"],["7492070640443362562","q",0,"Just do.",""],["7518602410919562527","q",0,"",""],["7489807333497801992","u",1,"",""],["7510990250622192918","q",0,"“You promised yourself.”",""],["7492041979761659158","q",0,"Jim Rohn","Solitude - Ultra Slowed · juno & blindheart"],["7168483603901467910","q",0,"Advice You Need To Hear.",""],["7493660037458480430","q",0,"Go get it.",""],["7440907294549871905","q",0,"What do you waste time doing?",""]];
+const MODES=[["q","Mindset","--mindset"],["m","Money","--money"],["l","Looks","--looks"],["u","Unsorted","--unsorted"]];
+const NAME=Object.fromEntries(MODES.map(m=>[m[0],m[1]]));
+const LS="modePlayer.v1";
+function load(){try{return JSON.parse(localStorage.getItem(LS))||{}}catch(e){return {}}}
+function save(){try{localStorage.setItem(LS,JSON.stringify(state))}catch(e){}}
+const state=Object.assign({moves:{},added:[],mode:"q",shuffle:true,cap:true,vis:true},load());
+const clips=RAW.map(r=>({id:r[0],base:r[1],photo:!!r[2],cap:r[3],song:r[4]}));
+const known=new Set(clips.map(c=>c.id));
+for(const a of state.added){if(!known.has(a.id)){clips.unshift({id:a.id,base:a.mode,photo:false,cap:"Added by you",song:""});known.add(a.id)}}
+const modeOf=c=>state.moves[c.id]||c.base;
+let queue=[],qi=0,iframe=null,started=false,playing=false,capTimer=null,lastTime=0;
+const $=id=>document.getElementById(id);
+
+function toast(t){const el=$("toast");el.textContent=t;el.classList.add("show");clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove("show"),1600)}
+function renderModes(){
+  const nav=$("modes");nav.innerHTML="";
+  for(const [k,n,c] of MODES){
+    const count=clips.filter(x=>modeOf(x)===k).length;
+    const b=document.createElement("button");b.className="mode";b.style.setProperty("--c",`var(${c})`);
+    b.setAttribute("aria-pressed",String(state.mode===k));b.innerHTML=`${n} <b>${count}</b>`;
+    b.onclick=()=>{state.mode=k;save();build();renderModes();if(started)play();else updateNow()};
+    nav.appendChild(b);
+  }
+  document.body.dataset.mode=state.mode;
+  const row=$("sortRow");row.innerHTML="";
+  MODES.forEach(([k,n,c],i)=>{const b=document.createElement("button");b.style.setProperty("--c",`var(${c})`);
+    b.innerHTML=`<kbd>${i+1}</kbd>${n}`;b.onclick=()=>move(k);row.appendChild(b)});
+}
+function build(){
+  queue=clips.filter(c=>modeOf(c)===state.mode);
+  if(state.shuffle){for(let i=queue.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[queue[i],queue[j]]=[queue[j],queue[i]]}}
+  qi=0;
+}
+function cur(){return queue[qi]}
+function updateNow(){
+  const c=cur();
+  $("pos").textContent=c?`${NAME[state.mode]} · ${qi+1} of ${queue.length}`:NAME[state.mode];
+  $("cap").textContent=c?(c.cap||"No caption"):"Nothing in this mode yet";
+  $("song").textContent=c&&c.song?`♪ ${c.song}`:"";
+  $("open").href=c?`https://www.tiktok.com/@_/video/${c.id}`:"#";
+}
+function send(type,value){try{iframe&&iframe.contentWindow.postMessage({type,value,"x-tiktok-player":true},"*")}catch(e){}}
+function play(){
+  const c=cur();updateNow();$("prog").style.width="0";clearTimeout(capTimer);lastTime=0;
+  if(iframe){iframe.remove();iframe=null}
+  if(!c)return;
+  iframe=document.createElement("iframe");
+  iframe.allow="autoplay; encrypted-media; fullscreen; picture-in-picture";
+  iframe.src=`https://www.tiktok.com/player/v1/${c.id}?autoplay=1&loop=0&rel=0&music_info=1&description=0&controls=1&progress_bar=0&native_context_menu=0&closed_caption=0`;
+  iframe.style.opacity=state.vis?"1":"0";
+  $("stage").appendChild(iframe);
+  playing=true;$("pp").textContent="❚❚";
+  // Photo posts and stalled clips: move on after a while anyway
+  capTimer=setTimeout(()=>{if(playing)next()},(state.cap?40:180)*1000+4000);
+}
+function next(){if(!queue.length)return;qi=(qi+1)%queue.length;play()}
+function prev(){if(!queue.length)return;qi=(qi-1+queue.length)%queue.length;play()}
+function move(k){
+  const c=cur();if(!c)return;
+  if(k===c.base)delete state.moves[c.id];else state.moves[c.id]=k;save();
+  toast(`Moved to ${NAME[k]}`);
+  if(k!==state.mode){queue.splice(qi,1);if(qi>=queue.length)qi=0;renderModes();if(started)play();else updateNow()}
+}
+window.addEventListener("message",e=>{
+  if(!iframe||e.source!==iframe.contentWindow)return;
+  const d=e.data;if(!d||typeof d!=="object")return;
+  if(d.type==="onPlayerReady"){send("unMute");send("play")}
+  else if(d.type==="onStateChange"){if(d.value===0)next();else if(d.value===1){playing=true;$("pp").textContent="❚❚"}else if(d.value===2){playing=false;$("pp").textContent="▶"}}
+  else if(d.type==="onCurrentTime"&&d.value){const t=d.value.currentTime||0,dur=d.value.duration||0;
+    if(dur)$("prog").style.width=Math.min(100,t/(state.cap?Math.min(dur,40):dur)*100)+"%";
+    if(t+0.5<lastTime&&dur&&lastTime>dur-1.5){next();return} // looped back to start
+    lastTime=t;
+    if(state.cap&&t>=40)next();}
+});
+$("go").onclick=()=>{started=true;$("start").hidden=true;play()};
+$("next").onclick=()=>{if(!started){$("go").click();return}next()};
+$("prev").onclick=()=>{if(!started){$("go").click();return}prev()};
+$("pp").onclick=()=>{if(!started){$("go").click();return}if(playing){send("pause");playing=false;$("pp").textContent="▶"}else{send("play");playing=true;$("pp").textContent="❚❚"}};
+function tog(id,key,after){const b=$(id);b.setAttribute("aria-pressed",String(state[key]));b.onclick=()=>{state[key]=!state[key];b.setAttribute("aria-pressed",String(state[key]));save();after&&after()}}
+tog("shuf","shuffle",()=>{build();if(started)play();else updateNow()});
+tog("cap30","cap");
+tog("vis","vis",()=>{if(iframe)iframe.style.opacity=state.vis?"1":"0"});
+$("copy").onclick=()=>{
+  const lines=Object.entries(state.moves).map(([id,k])=>`${id} -> ${NAME[k]}`);
+  for(const a of state.added){if(!state.moves[a.id])lines.push(`${a.id} -> ${NAME[a.mode]} (added)`)}
+  const text=lines.length?`Mode Player changes (${lines.length}):\n`+lines.join("\n"):"Mode Player: no changes yet";
+  const done=()=>toast(lines.length?"Copied. Paste it to Claude":"No moves yet");
+  if(navigator.clipboard)navigator.clipboard.writeText(text).then(done,()=>{prompt("Copy this:",text)});else prompt("Copy this:",text);
+};
+$("addForm").addEventListener("submit",e=>{
+  e.preventDefault();
+  const v=$("addUrl").value.trim();
+  const m=v.match(/\/(?:video|photo|v)\/(\d{15,22})/)||v.match(/^(\d{15,22})$/)||v.match(/[?&](?:item_id|share_item_id)=(\d{15,22})/);
+  if(!m){toast(/tiktok\.com\/t\/|vm\.tiktok|vt\.tiktok/.test(v)?"Short link: open it in Safari, then copy the full address":"That doesn't look like a TikTok video link");return}
+  const id=m[1];
+  if(known.has(id)){toast("Already in your player");$("addUrl").value="";return}
+  state.added.push({id,mode:state.mode});save();
+  const c={id,base:state.mode,photo:false,cap:"Added by you",song:""};clips.unshift(c);known.add(id);
+  queue.splice(qi+(started?1:0),0,c);
+  $("addUrl").value="";renderModes();updateNow();toast(`Added to ${NAME[state.mode]}`);
+});
+document.addEventListener("keydown",e=>{
+  if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA")return;
+  if(e.code==="Space"){e.preventDefault();$("pp").click()}
+  else if(e.key==="ArrowRight")$("next").click();
+  else if(e.key==="ArrowLeft")$("prev").click();
+  else if(["1","2","3","4"].includes(e.key))move(MODES[+e.key-1][0]);
+});
+renderModes();build();updateNow();
+</script>
+</body>
+</html>
