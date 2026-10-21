@@ -45,6 +45,9 @@ h1 span{color:var(--accent);transition:color .3s}
 main{flex:1;display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:22px;align-items:start}
 .stage{position:relative;height:min(78vh,820px);aspect-ratio:9/16;max-width:100%;background:#000;border-radius:14px;overflow:hidden;border:1px solid var(--line)}
 .stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.swipe{position:absolute;inset:0;z-index:2;touch-action:none;display:none}
+body.is-playing .swipe{display:block}
+.start{z-index:3}
 .start{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
   background:radial-gradient(circle at 50% 40%, color-mix(in srgb,var(--accent) 22%, #000), #000 70%);text-align:center;padding:24px}
 .start button{font:800 15px var(--display);background:var(--accent);color:var(--ink);border:0;border-radius:999px;padding:14px 26px;cursor:pointer}
@@ -91,6 +94,7 @@ main{flex:1;display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:
   </header>
   <main>
     <div class="stage" id="stage">
+      <div class="swipe" id="swipe" aria-hidden="true"></div>
       <div class="start" id="start">
         <button id="go">Start</button>
         <p>Plays your saved TikToks back to back, straight from TikTok. Glance, listen, it moves on by itself.</p>
@@ -109,6 +113,7 @@ main{flex:1;display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:
         <button class="ctl" id="next" aria-label="Next">▶▶</button>
       </div>
       <div class="toggles">
+        <button class="tog" id="rep" aria-pressed="false">Repeat this sound</button>
         <button class="tog" id="shuf" aria-pressed="true">Shuffle</button>
         <button class="tog" id="cap30" aria-pressed="true">Cut long clips at 40 s</button>
         <button class="tog" id="vis" aria-pressed="true">Show video</button>
@@ -116,7 +121,7 @@ main{flex:1;display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:
       <div class="sort">
         <h2>Wrong mode? Move this clip</h2>
         <div class="row" id="sortRow"></div>
-        <div class="small">Keys: <b>space</b> play/pause, <b>←/→</b> previous/next, <b>1–4</b> move clip. <a id="open" href="#" target="_blank" rel="noopener">Open on TikTok</a></div>
+        <div class="small">Swipe up for next, down to go back, tap to pause. On a computer: scroll, or <b>space</b> and <b>←/→</b>. <b>1–4</b> moves a clip. <a id="open" href="#" target="_blank" rel="noopener">Open on TikTok</a></div>
         <div class="row"><button style="--c:var(--fg)" id="copy">Copy my sorting</button></div>
         <div class="small">Your moves and added clips are saved on this device. Copy and paste them to Claude to make them permanent.</div>
       </div>
@@ -139,12 +144,13 @@ const NAME=Object.fromEntries(MODES.map(m=>[m[0],m[1]]));
 const LS="modePlayer.v1";
 function load(){try{return JSON.parse(localStorage.getItem(LS))||{}}catch(e){return {}}}
 function save(){try{localStorage.setItem(LS,JSON.stringify(state))}catch(e){}}
-const state=Object.assign({moves:{},added:[],mode:"q",shuffle:true,cap:true,vis:true},load());
+const state=Object.assign({moves:{},added:[],mode:"q",shuffle:true,cap:true,vis:true,rep:false},load());
 const clips=RAW.map(r=>({id:r[0],base:r[1],photo:!!r[2],cap:r[3],song:r[4]}));
 const known=new Set(clips.map(c=>c.id));
 for(const a of state.added){if(!known.has(a.id)){clips.unshift({id:a.id,base:a.mode,photo:false,cap:"Added by you",song:""});known.add(a.id)}}
 const modeOf=c=>state.moves[c.id]||c.base;
 let queue=[],qi=0,iframe=null,started=false,playing=false,capTimer=null,lastTime=0;
+const IOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
 const $=id=>document.getElementById(id);
 
 function toast(t){const el=$("toast");el.textContent=t;el.classList.add("show");clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove("show"),1600)}
@@ -175,22 +181,37 @@ function updateNow(){
   $("song").textContent=c&&c.song?`♪ ${c.song}`:"";
   $("open").href=c?`https://www.tiktok.com/@_/video/${c.id}`:"#";
 }
-function send(type,value){try{iframe&&iframe.contentWindow.postMessage({type,value,"x-tiktok-player":true},"*")}catch(e){}}
-function play(){
+const SRC=(id,auto)=>`https://www.tiktok.com/player/v1/${id}?autoplay=${auto?1:0}&loop=0&rel=0&music_info=1&description=0&controls=1&progress_bar=0&native_context_menu=0&closed_caption=0`;
+let pre=null,confirmedId=null; // next clip, loaded in the background so a swipe can start it instantly
+function makeFrame(id,auto,hidden){const f=document.createElement("iframe");f.allow="autoplay; encrypted-media; fullscreen; picture-in-picture";f.src=SRC(id,auto);f.dataset.id=id;
+  f.style.opacity=hidden?"0":(state.vis?"1":"0");f.style.pointerEvents=hidden?"none":"auto";f.style.zIndex=hidden?"0":"1";$("stage").insertBefore(f,$("swipe"));return f}
+function sendTo(f,type,value){try{f&&f.contentWindow.postMessage({type,value,"x-tiktok-player":true},"*")}catch(e){}}
+function send(type,value){sendTo(iframe,type,value)}
+function setPlaying(v){playing=v;$("pp").textContent=v?"❚❚":"▶";document.body.classList.toggle("is-playing",v)}
+function preloadNext(){
+  const n=queue[(qi+1)%queue.length];
+  if(pre&&(!n||pre.dataset.id!==n.id)){pre.remove();pre=null}
+  if(n&&!pre&&queue.length>1)pre=makeFrame(n.id,false,true);
+}
+function show(f){iframe=f;f.style.opacity=state.vis?"1":"0";f.style.pointerEvents="auto";f.style.zIndex="1"}
+function play(fromGesture){
   const c=cur();updateNow();$("prog").style.width="0";clearTimeout(capTimer);lastTime=0;
   if(iframe){iframe.remove();iframe=null}
-  if(!c)return;
-  iframe=document.createElement("iframe");
-  iframe.allow="autoplay; encrypted-media; fullscreen; picture-in-picture";
-  iframe.src=`https://www.tiktok.com/player/v1/${c.id}?autoplay=1&loop=0&rel=0&music_info=1&description=0&controls=1&progress_bar=0&native_context_menu=0&closed_caption=0`;
-  iframe.style.opacity=state.vis?"1":"0";
-  $("stage").appendChild(iframe);
-  playing=true;$("pp").textContent="❚❚";
-  // Photo posts and stalled clips: move on after a while anyway
-  capTimer=setTimeout(()=>{if(playing)next()},(state.cap?40:180)*1000+4000);
+  if(!c){if(pre){pre.remove();pre=null}return}
+  if(pre&&pre.dataset.id===c.id){show(pre);pre=null;
+    // Already loaded: start it right away, inside the swipe/tap that asked for it
+    send("unMute");send("play");setPlaying(true);armCap();
+    if(IOS){const id=c.id;setTimeout(()=>{if(iframe&&iframe.dataset.id===id&&confirmedId!==id){setPlaying(false);toast("Tap the video to play")}},1800)}
+  }else{
+    iframe=makeFrame(c.id,!IOS,false);
+    if(IOS){setPlaying(false);toast("Tap the video to play")}else{setPlaying(true);armCap()}
+  }
+  preloadNext();
 }
-function next(){if(!queue.length)return;qi=(qi+1)%queue.length;play()}
-function prev(){if(!queue.length)return;qi=(qi-1+queue.length)%queue.length;play()}
+// Safety net for photo posts and stalled clips: move on after a while, counted from when playback starts
+function armCap(){clearTimeout(capTimer);capTimer=setTimeout(()=>{if(playing&&!state.rep)next()},(state.cap?40:180)*1000+4000)}
+function next(g){if(!queue.length)return;qi=(qi+1)%queue.length;play(g)}
+function prev(g){if(!queue.length)return;qi=(qi-1+queue.length)%queue.length;play(g)}
 function move(k){
   const c=cur();if(!c)return;
   if(k===c.base)delete state.moves[c.id];else state.moves[c.id]=k;save();
@@ -200,21 +221,34 @@ function move(k){
 window.addEventListener("message",e=>{
   if(!iframe||e.source!==iframe.contentWindow)return;
   const d=e.data;if(!d||typeof d!=="object")return;
-  if(d.type==="onPlayerReady"){send("unMute");send("play")}
-  else if(d.type==="onStateChange"){if(d.value===0)next();else if(d.value===1){playing=true;$("pp").textContent="❚❚"}else if(d.value===2){playing=false;$("pp").textContent="▶"}}
+  if(d.type==="onPlayerReady"){if(!IOS){send("unMute");send("play")}}
+  else if(d.type==="onStateChange"){if(d.value===0){if(state.rep){send("seekTo",0);send("play")}else next()}else if(d.value===1){confirmedId=iframe.dataset.id;if(!playing)armCap();setPlaying(true)}else if(d.value===2){setPlaying(false)}}
   else if(d.type==="onCurrentTime"&&d.value){const t=d.value.currentTime||0,dur=d.value.duration||0;
     if(dur)$("prog").style.width=Math.min(100,t/(state.cap?Math.min(dur,40):dur)*100)+"%";
-    if(t+0.5<lastTime&&dur&&lastTime>dur-1.5){next();return} // looped back to start
+    if(t+0.5<lastTime&&dur&&lastTime>dur-1.5&&!state.rep){next();return} // looped back to start
     lastTime=t;
-    if(state.cap&&t>=40)next();}
+    if(state.cap&&t>=40){if(state.rep){send("seekTo",0);send("play")}else next()}}
 });
+// Swipe like TikTok: up = next, down = previous, tap = play/pause. Mouse wheel does the same on a computer.
+(function(){
+  const z=$("swipe");let y0=null,x0=0,t0=0;
+  z.addEventListener("touchstart",e=>{const t=e.touches[0];y0=t.clientY;x0=t.clientX;t0=Date.now()},{passive:true});
+  z.addEventListener("touchmove",e=>{e.preventDefault()},{passive:false});
+  z.addEventListener("touchend",e=>{if(y0===null)return;const t=e.changedTouches[0];const dy=t.clientY-y0,dx=t.clientX-x0;y0=null;
+    if(Math.abs(dy)>45&&Math.abs(dy)>Math.abs(dx)){dy<0?next(true):prev(true)}
+    else if(Math.abs(dy)<12&&Math.abs(dx)<12&&Date.now()-t0<400){$("pp").click()}});
+  z.addEventListener("click",e=>{if(e.pointerType==="touch"||e.detail===0)return;$("pp").click()});
+  let wheelLock=0;
+  $("stage").addEventListener("wheel",e=>{if(!started)return;e.preventDefault();const now=Date.now();if(now<wheelLock||Math.abs(e.deltaY)<20)return;wheelLock=now+700;e.deltaY>0?next(true):prev(true)},{passive:false});
+})();
 $("go").onclick=()=>{started=true;$("start").hidden=true;play()};
-$("next").onclick=()=>{if(!started){$("go").click();return}next()};
-$("prev").onclick=()=>{if(!started){$("go").click();return}prev()};
-$("pp").onclick=()=>{if(!started){$("go").click();return}if(playing){send("pause");playing=false;$("pp").textContent="▶"}else{send("play");playing=true;$("pp").textContent="❚❚"}};
+$("next").onclick=()=>{if(!started){$("go").click();return}next(true)};
+$("prev").onclick=()=>{if(!started){$("go").click();return}prev(true)};
+$("pp").onclick=()=>{if(!started){$("go").click();return}if(playing){send("pause");setPlaying(false)}else{send("unMute");send("play");setPlaying(true)}};
 function tog(id,key,after){const b=$(id);b.setAttribute("aria-pressed",String(state[key]));b.onclick=()=>{state[key]=!state[key];b.setAttribute("aria-pressed",String(state[key]));save();after&&after()}}
 tog("shuf","shuffle",()=>{build();if(started)play();else updateNow()});
 tog("cap30","cap");
+tog("rep","rep",()=>{toast(state.rep?"Repeating this sound until you swipe":"Repeat off");if(state.rep)clearTimeout(capTimer);else if(playing)armCap()});
 tog("vis","vis",()=>{if(iframe)iframe.style.opacity=state.vis?"1":"0"});
 $("copy").onclick=()=>{
   const lines=Object.entries(state.moves).map(([id,k])=>`${id} -> ${NAME[k]}`);
